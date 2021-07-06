@@ -36,5 +36,3 @@ Excample:
 * ffmpeg (for enconding ts -> mp4)
 
 As the script was written and tested in Linux (specifically Ubuntu 18.04.4 LTS) it uses GNU/Linux
-`cat` tool to merge the video pieces into one single file. I think this is the only thing that prevents
-it from running in Windows. If you have time to make a PR to fix that I will really appreciate.

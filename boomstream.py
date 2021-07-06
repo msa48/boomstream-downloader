@@ -6,6 +6,7 @@ import os
 import re
 import string
 import subprocess
+import shutil
 import sys
 
 from base64 import b64decode
@@ -256,7 +257,11 @@ class App(object):
         Merges all chunks into one file and encodes it to MP4
         """
         print("Merging chunks...")
-        run_bash(f"cat {' '.join(filenames)} > {output_path(key)}.ts")
+        with open(f"{output_path(key)}.ts", 'wb') as merged:
+            for ts_file in filenames:
+                with open(ts_file, 'rb') as mergefile:
+                    shutil.copyfileobj(mergefile, merged)
+
         print("Encoding to MP4")
         run_bash(f'ffmpeg -nostdin -y -i {output_path(key)}.ts -c copy {output_path(key)}.mp4')
 
