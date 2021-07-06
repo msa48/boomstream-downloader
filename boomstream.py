@@ -48,6 +48,10 @@ def run_bash(command):
         raise ValueError(f'failed with exit code {exit_code}')
     return output
 
+def run_bash_check_exist(command):
+    exit_code, output = subprocess.getstatusoutput(command)
+    return exit_code == 0
+
 class App(object):
 
     def __init__(self):
@@ -56,7 +60,9 @@ class App(object):
         parser.add_argument('--pin', type=str, required=False)
         parser.add_argument('--use-cache', action='store_true', required=False)
         parser.add_argument('--resolution', type=str, required=False)
+        parser.add_argument('--openssl-path', type=str, required=False)
         self.args = parser.parse_args()
+        self.openssl = "openssl"
 
     def get_token(self):
         return b64decode(self.config['mediaData']['token']).decode('utf-8')
@@ -226,13 +232,22 @@ class App(object):
             if not line.startswith('https://'):
                 continue
             outf = output_path(os.path.join(key, f"{i:05d}.ts"))
+            outf_encrypted = output_path(os.path.join(key, f"{i:05d}.tsencrypted"))
             filenames.append(outf)
             if os.path.exists(outf) and os.path.getsize(outf) > 0:
                 i += 1
                 print(f"Chunk #{i} exists [{outf}]")
                 continue
+            if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
+                os.remove(outf_encrypted)
             print(f"Downloading chunk #{i}")
-            run_bash(f'curl -s "{line}" | openssl aes-128-cbc -K "{hex_key}" -iv "{iv}" -d > {outf}')
+            file_crypt = requests.get(line)
+            if file_crypt:
+                with open(outf_encrypted, 'ab') as f:
+                    f.write(file_crypt.content)
+            run_bash(f'{self.openssl} aes-128-cbc -K "{hex_key}" -iv "{iv}" -d  -in "{outf_encrypted}" -out "{outf}"')
+            if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
+                os.remove(outf_encrypted)
             i += 1
         return filenames
 
@@ -276,6 +291,14 @@ class App(object):
         return {cookie["name"]: cookie["value"]}
 
     def run(self):
+        if self.args.openssl_path:
+            self.openssl = f'"{self.args.openssl_path}"'
+
+        self.exist_openssl = run_bash_check_exist(f'{self.openssl} version')
+
+        if not self.exist_openssl:
+            raise ValueError('OpenSSL is not exist. Install OpenSSL or use arg "--openssl-path PATH"')
+
         ensure_folder_exists(OUTPUT_PATH)
 
         cookies = self.get_access_cookies()

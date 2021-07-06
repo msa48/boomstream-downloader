@@ -21,6 +21,8 @@ Command line arguments:
 
 `--resolution` - video resolution. If not specified, the video with a highest one will be downloaded
 
+`--openssl-path` - location of the openssl binary, used if openssl not available in the environment
+
 Excample:
 ```bash
 --entity TiAR7aDs --pin 123-456-789 --resolution "640x360"
@@ -29,7 +31,6 @@ Excample:
 ## Requirements
 
 * openssl
-* curl
 * python-requests
 * lxml
 * ffmpeg (for enconding ts -> mp4)
