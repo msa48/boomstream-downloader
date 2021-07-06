@@ -23,9 +23,14 @@ Command line arguments:
 
 `--openssl-path` - location of the openssl binary, used if openssl not available in the environment
 
+`--ffmpeg-path` - location of the ffmpeg binary, used if ffmpeg not available in the environment
+
+`--ffprobe-path` - location of the ffprobe binary, used if ffprobe not available in the environment
+
 Excample:
+
 ```bash
---entity TiAR7aDs --pin 123-456-789 --resolution "640x360"
+--entity TiAR7aDs --pin 123-456-789 --resolution "640x360" --ffmpeg-path "C:\ffmpeg\bin\ffmpeg.exe" --ffprobe-path "C:\ffmpeg\bin\ffprobe.exe"
 ```
 
 ## Requirements
