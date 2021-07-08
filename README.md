@@ -21,19 +21,23 @@ Command line arguments:
 
 `--resolution` - video resolution. If not specified, the video with a highest one will be downloaded
 
+`--openssl-path` - location of the openssl binary, used if openssl not available in the environment
+
+`--ffmpeg-path` - location of the ffmpeg binary, used if ffmpeg not available in the environment
+
+`--ffprobe-path` - location of the ffprobe binary, used if ffprobe not available in the environment
+
 Excample:
+
 ```bash
---entity TiAR7aDs --pin 123-456-789 --resolution "640x360"
+--entity TiAR7aDs --pin 123-456-789 --resolution "640x360" --ffmpeg-path "C:\ffmpeg\bin\ffmpeg.exe" --ffprobe-path "C:\ffmpeg\bin\ffprobe.exe"
 ```
 
 ## Requirements
 
 * openssl
-* curl
 * python-requests
 * lxml
 * ffmpeg (for enconding ts -> mp4)
 
 As the script was written and tested in Linux (specifically Ubuntu 18.04.4 LTS) it uses GNU/Linux
-`cat` tool to merge the video pieces into one single file. I think this is the only thing that prevents
-it from running in Windows. If you have time to make a PR to fix that I will really appreciate.

@@ -6,6 +6,7 @@ import os
 import re
 import string
 import subprocess
+import shutil
 import sys
 
 from base64 import b64decode
@@ -48,6 +49,10 @@ def run_bash(command):
         raise ValueError(f'failed with exit code {exit_code}')
     return output
 
+def run_bash_check_exist(command):
+    exit_code, output = subprocess.getstatusoutput(command)
+    return exit_code == 0
+
 class App(object):
 
     def __init__(self):
@@ -56,7 +61,13 @@ class App(object):
         parser.add_argument('--pin', type=str, required=False)
         parser.add_argument('--use-cache', action='store_true', required=False)
         parser.add_argument('--resolution', type=str, required=False)
+        parser.add_argument('--openssl-path', type=str, required=False)
+        parser.add_argument('--ffmpeg-path', type=str, required=False)
+        parser.add_argument('--ffprobe-path', type=str, required=False)
         self.args = parser.parse_args()
+        self.openssl = "openssl"
+        self.ffmpeg = "ffmpeg"
+        self.ffprobe = "ffprobe"
 
     def get_token(self):
         return b64decode(self.config['mediaData']['token']).decode('utf-8')
@@ -226,13 +237,22 @@ class App(object):
             if not line.startswith('https://'):
                 continue
             outf = output_path(os.path.join(key, f"{i:05d}.ts"))
+            outf_encrypted = output_path(os.path.join(key, f"{i:05d}.tsencrypted"))
             filenames.append(outf)
             if os.path.exists(outf) and os.path.getsize(outf) > 0:
                 i += 1
                 print(f"Chunk #{i} exists [{outf}]")
                 continue
+            if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
+                os.remove(outf_encrypted)
             print(f"Downloading chunk #{i}")
-            run_bash(f'curl -s "{line}" | openssl aes-128-cbc -K "{hex_key}" -iv "{iv}" -d > {outf}')
+            file_crypt = requests.get(line)
+            if file_crypt:
+                with open(outf_encrypted, 'ab') as f:
+                    f.write(file_crypt.content)
+            run_bash(f'{self.openssl} aes-128-cbc -K "{hex_key}" -iv "{iv}" -d  -in "{outf_encrypted}" -out "{outf}"')
+            if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
+                os.remove(outf_encrypted)
             i += 1
         return filenames
 
@@ -241,20 +261,30 @@ class App(object):
         Merges all chunks into one file and encodes it to MP4
         """
         print("Merging chunks...")
-        run_bash(f"cat {' '.join(filenames)} > {output_path(key)}.ts")
+        with open(f"{output_path(key)}.ts", 'wb') as merged:
+            for ts_file in filenames:
+                with open(ts_file, 'rb') as mergefile:
+                    shutil.copyfileobj(mergefile, merged)
+
         print("Encoding to MP4")
-        run_bash(f'ffmpeg -nostdin -y -i {output_path(key)}.ts -c copy {output_path(key)}.mp4')
+        if self.exist_ffmpeg:
+            run_bash(f'{self.ffmpeg} -nostdin -y -i {output_path(key)}.ts -c copy {output_path(key)}.mp4')
 
-        result_format = run_bash(f'ffprobe -i {output_path(key)}.mp4 -show_format')
-        result_duration = float([line[len("duration="):] for line in result_format.split('\n') if line.startswith("duration=")][0])
-        print(f"Result duration: {result_duration:.2f}")
-        print(f"Expected duration: {expected_result_duration:.2f}")
-        if abs(result_duration - expected_result_duration) > 2:
-            raise ValueError(f"unexpected result duration: {expected_result_duration:.2f} != {result_duration:.2f}")
+        if self.exist_ffprobe:
+            result_format = run_bash(f'{self.ffprobe}  -i {output_path(key)}.mp4 -show_format')
+            result_duration = float([line[len("duration="):] for line in result_format.split('\n') if line.startswith("duration=")][0])
+            print(f"Result duration: {result_duration:.2f}")
+            print(f"Expected duration: {expected_result_duration:.2f}")
+            if abs(result_duration - expected_result_duration) > 2:
+                raise ValueError(f"unexpected result duration: {expected_result_duration:.2f} != {result_duration:.2f}")
 
-        ensure_folder_exists(output_path("results"))
-        result_filename = output_path(os.path.join("results", f"{valid_filename(self.get_title())}.mp4"))
-        os.rename(f'{output_path(key)}.mp4', result_filename)
+        if self.exist_ffmpeg:
+            ensure_folder_exists(output_path("results"))
+            result_filename = output_path(os.path.join("results", f"{valid_filename(self.get_title())}.mp4"))
+            if os.path.exists(result_filename):
+                os.remove(result_filename)
+            os.rename(f'{output_path(key)}.mp4', result_filename)
+            print(f"Result: {result_filename}")
 
     def get_title(self):
         return self.config['entity']['title']
@@ -276,6 +306,27 @@ class App(object):
         return {cookie["name"]: cookie["value"]}
 
     def run(self):
+        if self.args.openssl_path:
+            self.openssl = f'"{self.args.openssl_path}"'
+        if self.args.ffmpeg_path:
+            self.ffmpeg = f'"{self.args.ffmpeg_path}"'
+        if self.args.ffprobe_path:
+            self.ffprobe = f'"{self.args.ffprobe_path}"'
+
+        self.exist_openssl = run_bash_check_exist(f'{self.openssl} version')
+        self.exist_ffmpeg = run_bash_check_exist(f'{self.ffmpeg} -version')
+        self.exist_ffprobe = run_bash_check_exist(f'{self.ffprobe} -version')
+
+        if not self.exist_openssl:
+            raise ValueError('OpenSSL is not exist. Install OpenSSL or use arg "--openssl-path PATH"')
+
+        if not self.exist_ffmpeg or not self.exist_ffprobe:
+            print("http://ffmpeg.org/download.html")
+            if not self.exist_ffmpeg:
+                print(f'{self.ffmpeg} not exist. The result will not be converted to *.mp4.\nPlease Download ffmpeg and put it in the same directory as the script or use arg "--ffmpeg-path PATH".')
+            if not self.exist_ffprobe:
+                print(f'{self.ffprobe} not exist. The result duration will not be checked.\nPlease Download ffprobe and put it in the same directory as the script or use arg "--ffprobe-path PATH".')
+
         ensure_folder_exists(OUTPUT_PATH)
 
         cookies = self.get_access_cookies()
