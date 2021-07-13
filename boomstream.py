@@ -217,19 +217,13 @@ class App(object):
                   self.encrypt(decr[0:20] + self.token, XOR_KEY)
 
         print(f'key url = {key_url}')
-
-        r = requests.get(key_url, headers=headers)
-        key = r.text
         print(f"IV = {iv}")
-        print(f"Key = {key}")
-        return iv, key
 
-    def download_chunks(self, chunklist, iv, key, title):
+        return iv, key_url
+
+    def download_chunks(self, chunklist, iv, key_url, title):
         valid_name = valid_filename(title)
         ensure_folder_exists(output_path(valid_name))
-
-        # Convert the key to format suitable for openssl command-line tool
-        hex_key = ''.join([f'{ord(c):02x}' for c in key])
 
         filenames = []
 
@@ -247,6 +241,12 @@ class App(object):
                 continue
             if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
                 os.remove(outf_encrypted)
+
+            r = requests.get(key_url, headers=headers)
+            key = r.text
+            # Convert the key to format suitable for openssl command-line tool
+            hex_key = ''.join([f'{ord(c):02x}' for c in key])
+
             print(f"Downloading chunk #{i}")
             file_crypt = requests.get(line)
             if file_crypt:
@@ -368,11 +368,11 @@ class App(object):
 
         print(f'X-MEDIA-READY: {xmedia_ready}')
 
-        iv, key = self.get_aes_key(xmedia_ready)
+        iv, key_url = self.get_aes_key(xmedia_ready)
         title = self.get_title()
         print(f"Title = {title}")
 
-        filenames = self.download_chunks(chunklist, iv, key, title)
+        filenames = self.download_chunks(chunklist, iv, key_url, title)
         self.merge_chunks(filenames, self.expected_result_duration, title)
 
 if __name__ == '__main__':
