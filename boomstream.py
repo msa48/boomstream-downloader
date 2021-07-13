@@ -217,18 +217,13 @@ class App(object):
                   self.encrypt(decr[0:20] + self.token, XOR_KEY)
 
         print(f'key url = {key_url}')
-
-        r = requests.get(key_url, headers=headers)
-        key = r.text
         print(f"IV = {iv}")
-        print(f"Key = {key}")
-        return iv, key
 
-    def download_chunks(self, chunklist, iv, key):
-        ensure_folder_exists(output_path(key))
+        return iv, key_url
 
-        # Convert the key to format suitable for openssl command-line tool
-        hex_key = ''.join([f'{ord(c):02x}' for c in key])
+    def download_chunks(self, chunklist, iv, key_url, title):
+        valid_name = valid_filename(title)
+        ensure_folder_exists(output_path(valid_name))
 
         filenames = []
 
@@ -236,8 +231,9 @@ class App(object):
         for line in chunklist.split('\n'):
             if not line.startswith('https://'):
                 continue
-            outf = output_path(os.path.join(key, f"{i:05d}.ts"))
-            outf_encrypted = output_path(os.path.join(key, f"{i:05d}.tsencrypted"))
+
+            outf = output_path(os.path.join(valid_name, f"{i:05d}.ts"))
+            outf_encrypted = output_path(os.path.join(valid_name, f"{i:05d}.tsencrypted"))
             filenames.append(outf)
             if os.path.exists(outf) and os.path.getsize(outf) > 0:
                 i += 1
@@ -245,6 +241,12 @@ class App(object):
                 continue
             if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
                 os.remove(outf_encrypted)
+
+            r = requests.get(key_url, headers=headers)
+            key = r.text
+            # Convert the key to format suitable for openssl command-line tool
+            hex_key = ''.join([f'{ord(c):02x}' for c in key])
+
             print(f"Downloading chunk #{i}")
             file_crypt = requests.get(line)
             if file_crypt:
@@ -256,22 +258,25 @@ class App(object):
             i += 1
         return filenames
 
-    def merge_chunks(self, filenames, key, expected_result_duration):
+    def merge_chunks(self, filenames, expected_result_duration, title):
         """
         Merges all chunks into one file and encodes it to MP4
         """
+        valid_name = valid_filename(title)
+        merged_file_ts_filename = f"{output_path(valid_name)}.ts"
         print("Merging chunks...")
-        with open(f"{output_path(key)}.ts", 'wb') as merged:
+        with open(merged_file_ts_filename, 'wb') as merged:
             for ts_file in filenames:
                 with open(ts_file, 'rb') as mergefile:
                     shutil.copyfileobj(mergefile, merged)
 
         print("Encoding to MP4")
+        temp_mp4_filename = f'{output_path(valid_name)}.mp4'
         if self.exist_ffmpeg:
-            run_bash(f'{self.ffmpeg} -nostdin -y -i {output_path(key)}.ts -c copy {output_path(key)}.mp4')
+            run_bash(f'{self.ffmpeg} -nostdin -y -i "{merged_file_ts_filename}" -c copy "{temp_mp4_filename}"')
 
         if self.exist_ffprobe:
-            result_format = run_bash(f'{self.ffprobe}  -i {output_path(key)}.mp4 -show_format')
+            result_format = run_bash(f'{self.ffprobe}  -i "{temp_mp4_filename}" -show_format')
             result_duration = float([line[len("duration="):] for line in result_format.split('\n') if line.startswith("duration=")][0])
             print(f"Result duration: {result_duration:.2f}")
             print(f"Expected duration: {expected_result_duration:.2f}")
@@ -280,10 +285,10 @@ class App(object):
 
         if self.exist_ffmpeg:
             ensure_folder_exists(output_path("results"))
-            result_filename = output_path(os.path.join("results", f"{valid_filename(self.get_title())}.mp4"))
+            result_filename = output_path(os.path.join("results", f"{valid_name}.mp4"))
             if os.path.exists(result_filename):
                 os.remove(result_filename)
-            os.rename(f'{output_path(key)}.mp4', result_filename)
+            os.rename(temp_mp4_filename, result_filename)
             print(f"Result: {result_filename}")
 
     def get_title(self):
@@ -362,9 +367,13 @@ class App(object):
         xmedia_ready = self.get_xmedia_ready(chunklist)
 
         print(f'X-MEDIA-READY: {xmedia_ready}')
-        iv, key = self.get_aes_key(xmedia_ready)
-        filenames = self.download_chunks(chunklist, iv, key)
-        self.merge_chunks(filenames, key, self.expected_result_duration)
+
+        iv, key_url = self.get_aes_key(xmedia_ready)
+        title = self.get_title()
+        print(f"Title = {title}")
+
+        filenames = self.download_chunks(chunklist, iv, key_url, title)
+        self.merge_chunks(filenames, self.expected_result_duration, title)
 
 if __name__ == '__main__':
     app = App()
