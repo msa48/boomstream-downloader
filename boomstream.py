@@ -210,18 +210,22 @@ class App(object):
         decr = self.decrypt(xmedia_ready, XOR_KEY)
         print(f'Decrypted X-MEDIA-READY: {decr}')
 
-        key = None
         iv = ''.join([f'{ord(c):02x}' for c in decr[20:36]])
 
         key_url = 'https://play.boomstream.com/api/process/' + \
                   self.encrypt(decr[0:20] + self.token, XOR_KEY)
 
-        print(f'key url = {key_url}')
+        r = requests.get(key_url, headers=headers)
+        key_text = r.text
+        # Convert the key to format suitable for openssl command-line tool
+        hex_key = ''.join([f'{ord(c):02x}' for c in key_text])          
+
+        print(f'Key = {key_text}')
         print(f"IV = {iv}")
 
-        return iv, key_url
+        return iv, hex_key
 
-    def download_chunks(self, chunklist, iv, key_url, title):
+    def download_chunks(self, chunklist, iv, hex_key, title):
         valid_name = valid_filename(title)
         ensure_folder_exists(output_path(valid_name))
 
@@ -235,17 +239,15 @@ class App(object):
             outf = output_path(os.path.join(valid_name, f"{i:05d}.ts"))
             outf_encrypted = output_path(os.path.join(valid_name, f"{i:05d}.tsencrypted"))
             filenames.append(outf)
+            
+            if os.path.exists(outf_encrypted):
+                os.remove(outf_encrypted)
+                if os.path.exists(outf):
+                    os.remove(outf)
             if os.path.exists(outf) and os.path.getsize(outf) > 0:
                 i += 1
                 print(f"Chunk #{i} exists [{outf}]")
                 continue
-            if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
-                os.remove(outf_encrypted)
-
-            r = requests.get(key_url, headers=headers)
-            key = r.text
-            # Convert the key to format suitable for openssl command-line tool
-            hex_key = ''.join([f'{ord(c):02x}' for c in key])
 
             print(f"Downloading chunk #{i}")
             file_crypt = requests.get(line)
@@ -253,7 +255,7 @@ class App(object):
                 with open(outf_encrypted, 'ab') as f:
                     f.write(file_crypt.content)
             run_bash(f'{self.openssl} aes-128-cbc -K "{hex_key}" -iv "{iv}" -d  -in "{outf_encrypted}" -out "{outf}"')
-            if os.path.exists(outf_encrypted) and os.path.getsize(outf_encrypted) > 0:
+            if os.path.exists(outf_encrypted):
                 os.remove(outf_encrypted)
             i += 1
         return filenames
@@ -368,11 +370,11 @@ class App(object):
 
         print(f'X-MEDIA-READY: {xmedia_ready}')
 
-        iv, key_url = self.get_aes_key(xmedia_ready)
+        iv, key = self.get_aes_key(xmedia_ready)
         title = self.get_title()
         print(f"Title = {title}")
 
-        filenames = self.download_chunks(chunklist, iv, key_url, title)
+        filenames = self.download_chunks(chunklist, iv, key, title)
         self.merge_chunks(filenames, self.expected_result_duration, title)
 
 if __name__ == '__main__':
