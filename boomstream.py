@@ -15,7 +15,8 @@ import requests
 
 XOR_KEY = 'bla_bla_bla'
 
-OUTPUT_PATH = "output"
+OUTPUT_PATH = "BoomstreamTemp"
+RESULT_OUTPUT_PATH = "Boomstream Videos"
 
 VALID_FILENAME_CHARS = set(f" -_.(){string.ascii_letters}{string.digits}")
 
@@ -264,34 +265,41 @@ class App(object):
         """
         Merges all chunks into one file and encodes it to MP4
         """
-        valid_name = valid_filename(title)
-        merged_file_ts_filename = f"{output_path(valid_name)}.ts"
+        source_file_name = valid_filename(title)
+        target_file_name = source_file_name
+        if not source_file_name.endswith(".mp4"):
+            target_file_name = f'{source_file_name}.mp4'
+
+        merged_file_ts_filepath = f"{output_path(source_file_name)}.ts"
         print("Merging chunks...")
-        with open(merged_file_ts_filename, 'wb') as merged:
+        with open(merged_file_ts_filepath, 'wb') as merged:
             for ts_file in filenames:
                 with open(ts_file, 'rb') as mergefile:
                     shutil.copyfileobj(mergefile, merged)
 
-        print("Encoding to MP4")
-        temp_mp4_filename = f'{output_path(valid_name)}.mp4'
-        if self.exist_ffmpeg:
-            run_bash(f'{self.ffmpeg} -nostdin -y -i "{merged_file_ts_filename}" -c copy "{temp_mp4_filename}"')
+        temp_mp4_filepath = merged_file_ts_filepath
+        
+        if not source_file_name.endswith(".mp4"):
+            print("Encoding to MP4")
+            temp_mp4_filepath = output_path(target_file_name)
+            if self.exist_ffmpeg:
+                run_bash(f'{self.ffmpeg} -nostdin -y -i "{merged_file_ts_filepath}" -c copy "{temp_mp4_filepath}"')
 
         if self.exist_ffprobe:
-            result_format = run_bash(f'{self.ffprobe}  -i "{temp_mp4_filename}" -show_format')
+            result_format = run_bash(f'{self.ffprobe}  -i "{temp_mp4_filepath}" -show_format')
             result_duration = float([line[len("duration="):] for line in result_format.split('\n') if line.startswith("duration=")][0])
             print(f"Result duration: {result_duration:.2f}")
             print(f"Expected duration: {expected_result_duration:.2f}")
             if abs(result_duration - expected_result_duration) > 2:
                 raise ValueError(f"unexpected result duration: {expected_result_duration:.2f} != {result_duration:.2f}")
 
-        if self.exist_ffmpeg:
-            ensure_folder_exists(output_path("results"))
-            result_filename = output_path(os.path.join("results", f"{valid_name}.mp4"))
-            if os.path.exists(result_filename):
-                os.remove(result_filename)
-            os.rename(temp_mp4_filename, result_filename)
-            print(f"Result: {result_filename}")
+        print("Prepare result...")
+        ensure_folder_exists(RESULT_OUTPUT_PATH)
+        result_filename = os.path.join(RESULT_OUTPUT_PATH, target_file_name)
+        if os.path.exists(result_filename):
+            os.remove(result_filename)
+        os.rename(temp_mp4_filepath, result_filename)
+        print(f"Result: {result_filename}")
 
     def get_title(self):
         return self.config['entity']['title']
