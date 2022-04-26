@@ -15,16 +15,10 @@ using session token and the second part of `#EXT-X-MEDIA-READY`.
 
 Command line arguments:
 
-`--entity` (required) - value can be found in URL like https://play.boomstream.com/TiAR7aDs
-
-`--pin` - required only for content protected with a pin code
-
-`--resolution` - video resolution. If not specified, the video with a highest one will be downloaded
-
-`--openssl-path` - location of the openssl binary, used if openssl not available in the environment
-
-`--ffmpeg-path` - location of the ffmpeg binary, used if ffmpeg not available in the environment
-
+`--entity` (required) - value can be found in URL like https://play.boomstream.com/TiAR7aDs  
+`--pin` - required only for content protected with a pin code  
+`--resolution` - video resolution. If not specified, the video with a highest one will be downloaded  
+`--ffmpeg-path` - location of the ffmpeg binary, used if ffmpeg not available in the environment  
 `--ffprobe-path` - location of the ffprobe binary, used if ffprobe not available in the environment
 
 Excample:
@@ -35,7 +29,7 @@ Excample:
 
 ## Requirements
 
-* openssl
+* cryptography
 * python-requests
 * lxml
 * ffmpeg (for enconding ts -> mp4)

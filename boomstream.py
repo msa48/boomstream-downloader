@@ -12,6 +12,7 @@ import sys
 from base64 import b64decode
 from lxml.html import fromstring
 import requests
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 XOR_KEY = 'bla_bla_bla'
 
@@ -54,6 +55,10 @@ def run_bash_check_exist(command):
     exit_code, output = subprocess.getstatusoutput(command)
     return exit_code == 0
 
+def create_cipher(key: bytes, iv: bytes):
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    return cipher
+
 class App(object):
 
     def __init__(self):
@@ -62,11 +67,9 @@ class App(object):
         parser.add_argument('--pin', type=str, required=False)
         parser.add_argument('--use-cache', action='store_true', required=False)
         parser.add_argument('--resolution', type=str, required=False)
-        parser.add_argument('--openssl-path', type=str, required=False)
         parser.add_argument('--ffmpeg-path', type=str, required=False)
         parser.add_argument('--ffprobe-path', type=str, required=False)
         self.args = parser.parse_args()
-        self.openssl = "openssl"
         self.ffmpeg = "ffmpeg"
         self.ffprobe = "ffprobe"
 
@@ -211,22 +214,20 @@ class App(object):
         decr = self.decrypt(xmedia_ready, XOR_KEY)
         print(f'Decrypted X-MEDIA-READY: {decr}')
 
-        iv = ''.join([f'{ord(c):02x}' for c in decr[20:36]])
+        iv = decr[20:36]
 
         key_url = 'https://play.boomstream.com/api/process/' + \
                   self.encrypt(decr[0:20] + self.token, XOR_KEY)
 
         r = requests.get(key_url, headers=headers)
         key_text = r.text
-        # Convert the key to format suitable for openssl command-line tool
-        hex_key = ''.join([f'{ord(c):02x}' for c in key_text])          
 
         print(f'Key = {key_text}')
         print(f"IV = {iv}")
 
-        return iv, hex_key
+        return key_text.encode(), iv.encode()
 
-    def download_chunks(self, chunklist, iv, hex_key, title):
+    def download_chunks(self, chunklist, cipher: Cipher, title):
         valid_name = valid_filename(title)
         ensure_folder_exists(output_path(valid_name))
 
@@ -238,13 +239,8 @@ class App(object):
                 continue
 
             outf = output_path(os.path.join(valid_name, f"{i:05d}.ts"))
-            outf_encrypted = output_path(os.path.join(valid_name, f"{i:05d}.tsencrypted"))
             filenames.append(outf)
             
-            if os.path.exists(outf_encrypted):
-                os.remove(outf_encrypted)
-                if os.path.exists(outf):
-                    os.remove(outf)
             if os.path.exists(outf) and os.path.getsize(outf) > 0:
                 i += 1
                 print(f"Chunk #{i} exists [{outf}]")
@@ -252,12 +248,13 @@ class App(object):
 
             print(f"Downloading chunk #{i}")
             file_crypt = requests.get(line)
-            if file_crypt:
-                with open(outf_encrypted, 'ab') as f:
-                    f.write(file_crypt.content)
-            run_bash(f'{self.openssl} aes-128-cbc -K "{hex_key}" -iv "{iv}" -d  -in "{outf_encrypted}" -out "{outf}"')
-            if os.path.exists(outf_encrypted):
-                os.remove(outf_encrypted)
+            
+            decryptor = cipher.decryptor()
+            result = decryptor.update(file_crypt.content) + decryptor.finalize()
+
+            with open(outf, 'ab') as f:
+                f.write(result)
+
             i += 1
         return filenames
 
@@ -321,19 +318,13 @@ class App(object):
         return {cookie["name"]: cookie["value"]}
 
     def run(self):
-        if self.args.openssl_path:
-            self.openssl = f'"{self.args.openssl_path}"'
         if self.args.ffmpeg_path:
             self.ffmpeg = f'"{self.args.ffmpeg_path}"'
         if self.args.ffprobe_path:
             self.ffprobe = f'"{self.args.ffprobe_path}"'
 
-        self.exist_openssl = run_bash_check_exist(f'{self.openssl} version')
         self.exist_ffmpeg = run_bash_check_exist(f'{self.ffmpeg} -version')
         self.exist_ffprobe = run_bash_check_exist(f'{self.ffprobe} -version')
-
-        if not self.exist_openssl:
-            raise ValueError('OpenSSL is not exist. Install OpenSSL or use arg "--openssl-path PATH"')
 
         if not self.exist_ffmpeg or not self.exist_ffprobe:
             print("http://ffmpeg.org/download.html")
@@ -378,11 +369,12 @@ class App(object):
 
         print(f'X-MEDIA-READY: {xmedia_ready}')
 
-        iv, key = self.get_aes_key(xmedia_ready)
+        key, iv = self.get_aes_key(xmedia_ready)
+        cipher = create_cipher(key, iv)
         title = self.get_title()
         print(f"Title = {title}")
 
-        filenames = self.download_chunks(chunklist, iv, key, title)
+        filenames = self.download_chunks(chunklist, cipher, title)
         self.merge_chunks(filenames, self.expected_result_duration, title)
 
 if __name__ == '__main__':
