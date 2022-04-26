@@ -27,6 +27,8 @@ Excample:
 --entity TiAR7aDs --pin 123-456-789 --resolution "640x360" --ffmpeg-path "C:\ffmpeg\bin\ffmpeg.exe" --ffprobe-path "C:\ffmpeg\bin\ffprobe.exe"
 ```
 
+Result will be placed in `output` folder in current working directory
+
 ## Requirements
 
 * cryptography

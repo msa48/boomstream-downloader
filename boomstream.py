@@ -16,8 +16,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 XOR_KEY = 'bla_bla_bla'
 
-OUTPUT_PATH = "BoomstreamTemp"
-RESULT_OUTPUT_PATH = "Boomstream Videos"
+OUTPUT_PATH = "temp"
+RESULT_OUTPUT_PATH = "output"
 
 VALID_FILENAME_CHARS = set(f" -_.(){string.ascii_letters}{string.digits}")
 
@@ -221,7 +221,7 @@ class App(object):
 
         r = requests.get(key_url, headers=headers)
         key_text = r.text
-
+  
         print(f'Key = {key_text}')
         print(f"IV = {iv}")
 
@@ -295,7 +295,7 @@ class App(object):
         result_filename = os.path.join(RESULT_OUTPUT_PATH, target_file_name)
         if os.path.exists(result_filename):
             os.remove(result_filename)
-        os.rename(temp_mp4_filepath, result_filename)
+        shutil.move(temp_mp4_filepath, result_filename)
         print(f"Result: {result_filename}")
 
     def get_title(self):
